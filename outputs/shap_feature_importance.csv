@@ -1,0 +1,13 @@
+feature,mean_abs_shap,mean_signed_shap
+Mean_NDVI_lag1,0.30356497,-0.11151489
+conflict_persistence_lag1,0.30262235,0.09328465
+Rainfall_mm_lag1,0.28653204,-0.19036287
+Rainfall_Anomaly_mm_lag1,0.25342566,-0.03467739
+Population_Density_per_SqKm,0.22154237,-0.019212887
+topic_diversity_lag1,0.14938156,0.062102754
+conflict_severity_weighted_lag1,0.14886533,-0.027161125
+total_abstraction_m3_per_day,0.13878046,-0.03813191
+Rainfall_Anomaly_Percent_lag1,0.118344545,-0.040191583
+decayed_sentiment_lag1,0.10542087,-0.0106121525
+Total_Population,0.059968643,-0.0011773879
+wrua_count,0.004963558,0.00016516274
