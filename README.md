@@ -333,3 +333,28 @@ Phase 6's plain average feature importance.
 `shap_policy_interpretation.txt` against domain knowledge — a surprising
 direction could be a genuine finding or a sign of a feature-construction
 issue, worth investigating either way before reporting it.
+
+## Phase 8 — Conflict risk mapping (`12_conflict_risk_mapping.py`)
+
+Turns the trained model into an actual sub-county risk map, exported for the
+Phase 9 dashboard.
+
+- Risk = predicted P(onset next month) using each sub-county's MOST RECENT
+  complete feature row — a genuine "as of now" forecast, not a re-score of
+  historical months. State this explicitly in your thesis.
+- Low/Medium/High uses RELATIVE tertiles across sub-counties, not fixed
+  probability thresholds — conflict onset is rare overall (Phase 6: well
+  under 1% of sub-county-months), so fixed thresholds would call almost
+  everywhere "Low" and hide real relative differences. The raw
+  `risk_probability` is always kept alongside the category.
+- `src/risk_mapping.py` — prediction + categorization + boundary merge.
+- `LAG_MONTHS` at the top **must match** `10_ml_modeling.py`.
+
+**Outputs:** `outputs/conflict_risk_layer.geojson` (dashboard-ready, with
+geometry), `outputs/conflict_risk_layer.csv` (same data, no geometry),
+`outputs/risk_map.png` (choropleth with legend).
+
+**Review before presenting:** "No data" sub-counties lack complete recent
+feature history (e.g. an NDVI/rainfall gap) — worth checking whether that's
+genuine or fixable. The tertile split is relative to this run's sub-county
+set and will shift as data/probabilities change over time.
