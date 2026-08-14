@@ -18,7 +18,13 @@ import type {
 // go to the same origin nginx serves the app from, which proxies
 // /api/* to the backend container -- no CORS, no separate domain
 // needed. In local dev it's the full backend URL (see .env).
-const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+const BASE_URL = (
+  import.meta as ImportMeta & {
+    env?: {
+      VITE_API_BASE_URL?: string;
+    };
+  }
+).env?.VITE_API_BASE_URL ?? "http://localhost:8000";
 
 class ApiError extends Error {
   status: number;

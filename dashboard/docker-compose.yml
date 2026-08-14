@@ -24,7 +24,7 @@ services:
     environment:
       - OUTPUTS_DIR=/pipeline/outputs
       - DATA_DIR=/pipeline/data
-      - CORS_ORIGINS=http://localhost,http://localhost:80
+      - CORS_ORIGINS=http://localhost,http://localhost:,http://localhost:8181
     volumes:
       - ../outputs:/pipeline/outputs:ro
       - ../data:/pipeline/data:ro
@@ -43,7 +43,7 @@ services:
         # must be empty (not a URL) in production.
         VITE_API_BASE_URL: ""
     ports:
-      - "80:80"
+      - "8181:5173"  # frontend's nginx serves the React app on port 8181
     depends_on:
       - backend
     restart: unless-stopped
