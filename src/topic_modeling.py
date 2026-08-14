@@ -37,10 +37,120 @@ Two options, matching the same pattern as src/sentiment.py:
 
 from __future__ import annotations
 
+import ast
+
 import numpy as np
 import pandas as pd
 from bertopic import BERTopic
-from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
+from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer, ENGLISH_STOP_WORDS, ENGLISH_STOP_WORDS
+
+
+def build_place_name_stopwords(
+    canonical_subcounties: list[str] | None = None,
+    nlp_enriched_df: pd.DataFrame | None = None,
+    entity_cols: tuple[str, ...] = ("entities_Place", "entities_River"),
+) -> list[str]:
+    """
+    Place names dominating a topic's word list is a known BERTopic
+    behavior, not a bug: the topic REPRESENTATION (the words shown per
+    topic) comes from c-TF-IDF over a CountVectorizer, which by default
+    only strips generic English stopwords -- "Nairobi", "Kiambu",
+    "Turkana", ward names, etc. are frequent, statistically distinctive
+    terms in a geospatial conflict dataset, so they naturally score
+    high and show up in the topic's name/keywords.
+
+    This builds a comprehensive place-name exclusion list from TWO
+    complementary sources:
+      1. A static gazetteer: the 4 target counties and rivers from
+         ner_extraction.py's gazetteer, the canonical sub-county list
+         from name_cleaning.py, non-target-county place names
+         confirmed present in this dataset (Pokot, Baringo, Samburu,
+         etc.), and generic geography words ("county", "kenya", ...).
+      2. OPTIONAL, and stronger: pass nlp_enriched_df (the output of
+         04_nlp_pipeline.py, with entities_Place/entities_River
+         columns already computed) to ALSO exclude every specific
+         place spaCy's NER actually found in your real text --
+         critically, this catches WARD/NEIGHBORHOOD-level names the
+         static gazetteer can't anticipate (Kangemi, Mathare, Mukuru,
+         Lavington, Dagoretti, ...), since those sit below the
+         sub-county level covered by canonical_subcounties. This is
+         the "stronger, entity-masking fix" referenced elsewhere in
+         this module -- pass nlp_enriched_df to get it; the function
+         still works with just the static gazetteer if you don't.
+
+    This ONLY affects the topic-word REPRESENTATION (what's shown as
+    each topic's name/keywords) -- NOT the embeddings themselves, which
+    still see the full raw text for context (see the module docstring
+    for why that separation matters). If place names still dominate
+    topics after this, that's a sign the embedding step itself is
+    clustering partly by region rather than theme, which this
+    word-list fix can't address (a genuinely different problem).
+    """
+    from ner_extraction import RIVERS, TARGET_COUNTY_NAMES
+
+    other_kenyan_places = [
+        "pokot", "west pokot", "baringo", "samburu", "marakwet",
+        "elgeyo marakwet", "laikipia", "marsabit", "isiolo", "nakuru",
+        "uganda", "ethiopia", "tiaty", "kerio", "kerio valley",
+        "north rift", "kajiado", "kitui", "makueni",
+    ]
+    generic_geo_terms = [
+        "county", "counties", "sub-county", "subcounty", "sub county",
+        "kenya", "kenyan", "ward", "village", "area", "region", "district",
+    ]
+
+    river_terms = [r.lower() for r in RIVERS] + [r.replace(" River", "").lower() for r in RIVERS]
+    county_terms = [c.lower() for c in TARGET_COUNTY_NAMES]
+    subcounty_terms = [s.lower() for s in (canonical_subcounties or [])]
+
+    words = set(river_terms + county_terms + subcounty_terms + other_kenyan_places + generic_geo_terms)
+
+    if nlp_enriched_df is not None:
+        # Reuses the exact same term lists as src/land_water_analysis.py
+        # so "protected" and "thematically meaningful" mean the same
+        # thing everywhere in this codebase, not two lists that could
+        # silently drift apart.
+        from land_water_analysis import LAND_KEYWORDS, WATER_KEYWORDS
+        protected_words = set()
+        for phrase in LAND_KEYWORDS + WATER_KEYWORDS:
+            protected_words.update(phrase.lower().split())
+
+        def _parse_list_cell(cell) -> list[str]:
+            # After a CSV round-trip, a list column becomes a string
+            # like "['Nairobi', 'Kangemi']" -- parse it back; if it's
+            # already a real list (same-session, no round-trip), use
+            # it as-is.
+            if isinstance(cell, list):
+                return cell
+            if isinstance(cell, str) and cell.startswith("["):
+                try:
+                    return ast.literal_eval(cell)
+                except (ValueError, SyntaxError):
+                    return []
+            return []
+
+        # Multi-word names ("Athi River") are split into individual
+        # words ("athi", "river") because CountVectorizer's stop_words
+        # filtering happens on unigram tokens BEFORE n-grams are
+        # built -- removing "athi" from the vocabulary also prevents
+        # the "athi river" bigram from ever forming. BUT a component
+        # word that's independently thematically meaningful ("river"
+        # appearing inside "Nairobi River") is protected and
+        # never added, even as part of a multi-word entity -- confirmed
+        # necessary by testing: naive splitting was silently excluding
+        # "river" itself, which is exactly the kind of word a water-
+        # conflict topic model needs to keep (it's what distinguishes
+        # a river conflict from a borehole or dam one).
+        for col in entity_cols:
+            if col not in nlp_enriched_df.columns:
+                continue
+            for cell in nlp_enriched_df[col].dropna():
+                for place in _parse_list_cell(cell):
+                    for token in str(place).lower().replace("-", " ").split():
+                        if len(token) > 2 and token not in protected_words:
+                            words.add(token)
+
+    return sorted(words)
 
 
 def get_embeddings(docs: list[str], backend: str = "sentence_transformer",
@@ -62,12 +172,15 @@ def get_embeddings(docs: list[str], backend: str = "sentence_transformer",
 
 
 def build_topic_model(min_topic_size: int = 15, nr_topics: int | str | None = None,
-                       ngram_range: tuple = (1, 2)) -> BERTopic:
+                       ngram_range: tuple = (1, 2),
+                       extra_stopwords: list[str] | None = None) -> BERTopic:
     """
     Configures BERTopic with a domain-appropriate vectorizer for the
     topic-word (c-TF-IDF) representation -- English stopwords removed,
     1-2 word phrases allowed (so it can surface phrases like "riparian
-    encroachment" as a unit, not just single words).
+    encroachment" as a unit, not just single words), plus any
+    extra_stopwords (e.g. from build_place_name_stopwords()) to keep
+    place names out of the topic word lists specifically.
 
     min_topic_size=15 is a reasonable starting point for a dataset in
     the hundreds-to-low-thousands range -- too low and you get dozens
@@ -83,7 +196,8 @@ def build_topic_model(min_topic_size: int = 15, nr_topics: int | str | None = No
     auto-reduce during fit_transform as well would double up on that
     and make the final topic count harder to reason about.
     """
-    vectorizer_model = CountVectorizer(stop_words="english", ngram_range=ngram_range)
+    stop_words = list(ENGLISH_STOP_WORDS) + (extra_stopwords or [])
+    vectorizer_model = CountVectorizer(stop_words=stop_words, ngram_range=ngram_range)
     return BERTopic(
         vectorizer_model=vectorizer_model,
         min_topic_size=min_topic_size,
@@ -100,6 +214,9 @@ def fit_topics_temporal_safe(
     date_col: str = "Date_Start_parsed",
     embedding_backend: str = "sentence_transformer",
     min_topic_size: int = 15,
+    extra_stopwords: list[str] | None = None,
+    reduce_outliers_after_fit: bool = True,
+    target_n_topics: int | None = 10,
 ) -> tuple[pd.DataFrame, BERTopic, pd.DataFrame]:
     """
     Leakage-safe version of fit_topics: fits BERTopic ONLY on records
@@ -127,6 +244,21 @@ def fit_topics_temporal_safe(
     it already saw during fitting; a new theme that only emerges in
     the test period will correctly show up as -1, not be smuggled into
     an existing topic.
+
+    reduce_outliers_after_fit / target_n_topics: mirrors the same two
+    consolidation steps 05_topic_modelling.py applies (outlier
+    reassignment, then hierarchical reduction to ~target_n_topics
+    coherent themes) -- added here because THIS function had neither,
+    which was a real, confirmed gap: without it, this path produces a
+    raw, unconsolidated topic set (often 15-25 topics, several tiny)
+    while 05's path produces a clean ~10-topic set, and a dashboard
+    reading whichever ran most recently would look wildly inconsistent
+    run to run for no reason related to data quality. CRITICALLY, both
+    steps are fit using ONLY train_docs (the fitted model's own topic
+    definitions), and test-period documents are then RE-TRANSFORMED
+    against the updated model -- never re-fit -- so this consolidation
+    adds no new leakage; it's the exact same train-only-shapes-topics
+    guarantee as the initial fit above, just applied one more time.
     """
     df = df.copy()
     df[date_col] = pd.to_datetime(df[date_col])
@@ -139,10 +271,29 @@ def fit_topics_temporal_safe(
           f"test-period document(s) against the fitted model")
 
     train_embeddings = get_embeddings(train_docs, backend=embedding_backend)
-    topic_model = build_topic_model(min_topic_size=min_topic_size)
+    topic_model = build_topic_model(min_topic_size=min_topic_size, extra_stopwords=extra_stopwords)
     train_topics, _ = topic_model.fit_transform(train_docs, embeddings=train_embeddings)
 
+    if reduce_outliers_after_fit:
+        print("  Reassigning training-period outliers to their nearest topic (c-TF-IDF strategy)...")
+        train_topics = topic_model.reduce_outliers(train_docs, train_topics, strategy="c-tf-idf")
+        topic_model.update_topics(train_docs, topics=train_topics, vectorizer_model=topic_model.vectorizer_model)
+
+    if target_n_topics is not None:
+        current_n = len(topic_model.get_topic_info()) - 1  # exclude the -1 outlier row
+        if current_n > target_n_topics:
+            print(f"  Reducing {current_n} raw topics to ~{target_n_topics} coherent themes "
+                  f"(hierarchical merge, train-period documents only)...")
+            topic_model.reduce_topics(train_docs, nr_topics=target_n_topics)
+            train_topics = topic_model.topics_
+        else:
+            print(f"  Only {current_n} topic(s) found -- already at or below target_n_topics "
+                  f"({target_n_topics}), skipping reduction.")
+
     if len(test_docs) > 0:
+        # Re-transform against the FINAL (post-outlier-reassignment,
+        # post-reduction) model -- test documents were never used to
+        # shape any of the above, only to be classified against it.
         test_embeddings = get_embeddings(test_docs, backend=embedding_backend)
         test_topics, _ = topic_model.transform(test_docs, embeddings=test_embeddings)
     else:
@@ -158,6 +309,14 @@ def fit_topics_temporal_safe(
     id_to_name = dict(zip(topic_info["Topic"], topic_info["Name"]))
     out["topic_label"] = out["topic_id"].map(id_to_name)
 
+    # Defensive final check: topic_info should never list a topic with
+    # zero documents actually assigned in `out` -- if it somehow does
+    # (e.g. a topic only test-period docs would have matched before
+    # reduction, now merged away), drop it here so nothing downstream
+    # (the dashboard) can ever display a theme that filters to nothing.
+    live_counts = out["topic_id"].value_counts()
+    topic_info = topic_info[topic_info["Topic"].isin(live_counts.index)].reset_index(drop=True)
+
     train_outlier_rate = (out.loc[train_mask, "topic_id"] == -1).mean()
     test_outlier_rate = (out.loc[~train_mask, "topic_id"] == -1).mean() if len(test_docs) > 0 else float("nan")
     print(f"  Outlier rate -- train: {train_outlier_rate:.1%}, test: {test_outlier_rate:.1%} "
@@ -168,7 +327,8 @@ def fit_topics_temporal_safe(
 
 def fit_topics(df: pd.DataFrame, text_col: str = "Full_Text_Description",
                 embedding_backend: str = "sentence_transformer",
-                min_topic_size: int = 15) -> tuple[pd.DataFrame, BERTopic, pd.DataFrame]:
+                min_topic_size: int = 15,
+                extra_stopwords: list[str] | None = None) -> tuple[pd.DataFrame, BERTopic, pd.DataFrame]:
     """
     Fits BERTopic on df[text_col] and returns:
       - df with new columns: topic_id, topic_probability, topic_label
@@ -185,7 +345,7 @@ def fit_topics(df: pd.DataFrame, text_col: str = "Full_Text_Description",
     docs = df[text_col].fillna("").astype(str).tolist()
     embeddings = get_embeddings(docs, backend=embedding_backend)
 
-    topic_model = build_topic_model(min_topic_size=min_topic_size)
+    topic_model = build_topic_model(min_topic_size=min_topic_size, extra_stopwords=extra_stopwords)
     topics, probs = topic_model.fit_transform(docs, embeddings=embeddings)
 
     out = df.copy()

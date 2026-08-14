@@ -8,7 +8,7 @@
 # importance ranking XGBoost's feature_importances_ already gave us in
 # Phase 6.
 #
-# Run this after 10_ml_modeling.py (needs outputs/xgboost_model.joblib).
+# Run this after 10_ml_modeling.py (needs the horizon's xgboost_model.joblib).
 
 # %%
 import sys
@@ -24,15 +24,25 @@ sys.path.insert(0, "src")
 from pipeline_utils import log, save_and_display, Timer
 from ml_prep import prepare_modelling_table, temporal_train_test_split
 from shap_analysis import compute_shap_values, summarize_feature_importance, generate_policy_interpretation
+from output_paths import step_dir, horizon_subdir
 
 pd.set_option("display.max_columns", None)
 
-OUT_DIR = Path("outputs")
-PANEL_PATH = OUT_DIR / "ml_panel.csv"
-MODEL_PATH = OUT_DIR / "xgboost_model.joblib"
+PANEL_PATH = step_dir("08_nlp_panel_features") / "ml_panel.csv"
 
-LAG_MONTHS = 1        # MUST match 10_ml_modeling.py
-CUTOFF_YEAR = 2022     # MUST match 10_ml_modeling.py
+# SHAP is run for ONE horizon (the primary/default forecast window) --
+# not looped across all three like 10_ml_modeling.py and
+# 12_conflict_risk_mapping.py, to keep this step's output focused on a
+# single, clearly-stated model rather than tripling the number of SHAP
+# plots. Change SHAP_HORIZON_MONTHS if a different horizon is your
+# primary one for the thesis narrative.
+SHAP_HORIZON_MONTHS = 1
+OUT_DIR = step_dir("11_shap_interpretability")
+MODEL_DIR = horizon_subdir("10_ml_modeling", SHAP_HORIZON_MONTHS)
+MODEL_PATH = MODEL_DIR / "xgboost_model.joblib"
+
+LAG_MONTHS = SHAP_HORIZON_MONTHS  # MUST match the horizon of MODEL_PATH above
+CUTOFF_YEAR = 2022     # MUST match 10_ml_modeling.py's CUTOFF_YEAR
 TOP_N_DEPENDENCE_PLOTS = 4
 
 timer = Timer()

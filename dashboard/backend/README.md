@@ -14,20 +14,37 @@ the routers, the API contract, and the entire React frontend stay untouched.
 
 ## Local development
 
-```bash
-cd dashboard/backend
-python3 -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
+**Windows (PowerShell)** — what you've been using for the rest of this project:
+```powershell
+cd dashboard\backend
+python -m venv venv
+venv\Scripts\activate
 pip install -r requirements.txt
 
 # Point at your pipeline's outputs/data folders (defaults assume this
-# backend folder sits at geoai_conflict/dashboard/backend/, two levels
-# below geoai_conflict/ itself):
-export OUTPUTS_DIR=../../outputs   # Windows: set OUTPUTS_DIR=..\..\outputs
+# backend folder sits at geoai_conflict\dashboard\backend\, two levels
+# below geoai_conflict\ itself):
+$env:OUTPUTS_DIR = "..\..\outputs"
+$env:DATA_DIR = "..\..\data"
+
+uvicorn app.main:app --reload --port 8000
+```
+
+**macOS / Linux (bash)**:
+```bash
+cd dashboard/backend
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+export OUTPUTS_DIR=../../outputs
 export DATA_DIR=../../data
 
 uvicorn app.main:app --reload --port 8000
 ```
+
+Note: `$env:VAR = "value"` is PowerShell's equivalent of bash's `export VAR=value`
+— they don't mix, so use the block matching your actual shell.
 
 Visit `http://localhost:8000/docs` for interactive API docs (auto-generated
 from the route definitions — the fastest way to see exactly what's

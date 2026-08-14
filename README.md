@@ -15,7 +15,19 @@ geoai_conflict/
 ├── data/                        # put your FULL datasets here (not the samples)
 │   └── subcounty_boundaries.shp # your boundary shapefile (+ .shx/.dbf/.prj siblings)
 ├── src/                         # shared modules used by the scripts below
-├── outputs/                     # cleaned CSVs + figures land here
+├── outputs/                     # EVERY step writes into its OWN subfolder here --
+│   ├── 01_phase1_data_audit/    # e.g. outputs/06_spatial_feature_engineering/ml_panel.csv
+│   ├── 02_conflict_cleaning/    # -- never a flat shared namespace. A script needing
+│   ├── ...                      # another step's output reads it explicitly from that
+│   ├── 10_ml_modeling/          # step's folder (see src/output_paths.py). Steps 10 and
+│   │   ├── horizon_1month/      # 12 additionally split into horizon_<N>month/
+│   │   ├── horizon_3month/      # subfolders -- one per forecast horizon.
+│   │   └── horizon_6month/
+│   └── 12_conflict_risk_mapping/
+│       ├── horizon_1month/
+│       ├── horizon_3month/
+│       └── horizon_6month/
+├── run_pipeline.py               # runs every script below in order -- see "Running it"
 ├── 01_phase1_data_audit.py
 ├── 02_conflict_cleaning.py
 ├── 03_deduplication_check.py
@@ -25,12 +37,30 @@ geoai_conflict/
 ├── 07_topic_refit_temporal_safe.py
 ├── 08_nlp_panel_features.py
 ├── 09_exploratory_spatial_analysis.py
-└── 10_ml_modeling.py
+├── 10_ml_modeling.py
+├── 11_shap_interpretability.py
+├── 12_conflict_risk_mapping.py
+└── 13_land_water_relationship_analysis.py
 ```
 Run them in this numeric order — each one generally depends on outputs from
 the ones before it (details in each section below).
 
-## Running it
+## Running the whole pipeline at once
+```bash
+python run_pipeline.py                  # runs every step, in order, stopping on the first failure
+python run_pipeline.py --skip 05 07     # skip the two steps that need internet access
+python run_pipeline.py --from 06        # resume from step 06 onward (e.g. after fixing step 05)
+python run_pipeline.py --only 10 12     # run just these specific steps
+```
+Each step runs as its own subprocess (not all in one Python session) — this
+matters because several steps load heavy ML libraries, and running many of
+them back-to-back in a single process risks memory buildup or state leaking
+between steps. A subprocess starts clean every time. If a step fails, the
+orchestrator stops immediately (a failed early step means every later step
+will fail too on missing input) and tells you exactly how to resume with
+`--from`.
+
+## Running it step by step (equivalent to the above, one command per step)
 1. Replace the sample files in `data/` with your full datasets (same filenames, or
    update the `PATHS` dict at the top of `01_phase1_data_audit.py`).
 2. Drop your sub-county boundary shapefile into `data/` and update
@@ -39,7 +69,7 @@ the ones before it (details in each section below).
 3. In VS Code: open this folder, open `01_phase1_data_audit.py`, and run cells
    with Shift+Enter (the `# %%` markers create the cell boundaries). Or run the
    whole thing with `python 01_phase1_data_audit.py`.
-4. Check `outputs/` for cleaned CSVs and the two PNG figures. Read the
+4. Check `outputs/01_phase1_data_audit/` for cleaned CSVs and the two PNG figures. Read the
    "Manual review items" printed at the end and in the summary cell — any
    `unmatched` sub-county needs a decision (add to `MANUAL_ALIASES` in
    `name_cleaning.py`, or confirm it's a genuine data issue).
@@ -277,10 +307,12 @@ sub-counties for the chosen `K_NEIGHBORS`, Getis-Ord is skipped with a
 clear message rather than crashing — this can happen on small test data
 but shouldn't on your real ~20-30 sub-county dataset.
 
-## Phase 6 — ML model development (`10_ml_modeling.py`)
+## Phase 6 — Multi-horizon ML model development (`10_ml_modeling.py`)
 
-Logistic Regression (baseline), Random Forest (comparison), XGBoost (final),
-predicting conflict onset `LAG_MONTHS` ahead.
+Logistic Regression (baseline), Random Forest (comparison), XGBoost (final) —
+trained at THREE forecast horizons (`HORIZONS_MONTHS = [1, 3, 6]`, months
+ahead), so you can report how performance degrades as the forecast window
+lengthens.
 
 **Critical fix implemented here:** `conflict_persistence` at the exact month
 an event starts is always inflated by that same event (confirmed by direct
@@ -293,19 +325,35 @@ lagging since they don't change month to month.
   cutoff, not random — matches the spec's train-earlier/test-later design)
 - `src/ml_models.py` — all three models, `TimeSeriesSplit` cross-validation
   (not plain k-fold, for the same leakage reason as the lag), full metric
-  suite (accuracy/precision/recall/F1/ROC-AUC/PR-AUC/confusion matrix)
-- `CUTOFF_YEAR` and `LAG_MONTHS` at the top of the script are the two most
-  important tunables — check the printed train/test positive-rate before
-  trusting results; too few positives on either side make metrics meaningless
+  suite (accuracy/precision/recall/F1/ROC-AUC/PR-AUC), plus
+  `confusion_matrix_to_frame()` (explicitly labeled TN/FP/FN/TP — a real gap
+  found during review: confusion matrices were computed but never exported
+  in the original version) and `compute_calibration()` (reliability curve
+  data — is a "70% predicted risk" actually observed ~70% of the time?
+  `scale_pos_weight`, used to handle class imbalance, systematically shifts
+  predicted probabilities, so this matters for how you present risk numbers).
+- **ALL THREE models are saved per horizon**, not just XGBoost:
+  `logisticregression_model.joblib`, `randomforest_model.joblib`,
+  `xgboost_model.joblib` — each a dict with `{model, scaler, feature_cols,
+  horizon_months, cutoff_year}`.
+- `CUTOFF_YEAR` at the top of the script is the most important tunable —
+  check the printed train/test positive-rate per horizon before trusting
+  results; too few positives on either side make metrics meaningless.
 - Setup: `pip install scikit-learn xgboost joblib`
 
-**Outputs:** `outputs/model_comparison.csv`, `outputs/xgboost_model.joblib`
-(loadable for Phase 7), `outputs/model_evaluation.png`.
+**Outputs**, per horizon, in `outputs/10_ml_modeling/horizon_<N>month/`:
+`model_comparison.csv`, `confusion_matrices.csv`, `calibration.csv`,
+`model_evaluation.png` (ROC/PR/calibration curves + confusion matrix
+heatmaps), `feature_importance.png`, and all three `.joblib` model files.
+Plus, at the `outputs/10_ml_modeling/` root: `horizon_comparison_summary.csv`
+and `horizon_degradation.png` — all three models' metrics across every
+horizon in one place, the evidence for how performance changes with forecast
+distance.
 
 **Outstanding reminder:** `dominant_topic_id`/`topic_diversity` (if present in
 your panel) were built from a BERTopic model fit on the full corpus including
-test-period text — for full temporal rigor, exclude them or refit BERTopic on
-training-period text only before relying on results that include them.
+test-period text — for full temporal rigor, run `07_topic_refit_temporal_safe.py`
+before `08_nlp_panel_features.py` so these come from the leakage-safe refit.
 
 
 ## Phase 7 — Model interpretability (`11_shap_interpretability.py`)
@@ -334,27 +382,55 @@ Phase 6's plain average feature importance.
 direction could be a genuine finding or a sign of a feature-construction
 issue, worth investigating either way before reporting it.
 
-## Phase 8 — Conflict risk mapping (`12_conflict_risk_mapping.py`)
+## Phase 8 — Multi-horizon conflict risk mapping (`12_conflict_risk_mapping.py`)
 
-Turns the trained model into an actual sub-county risk map, exported for the
-Phase 9 dashboard.
+Turns EACH horizon's trained model into its own sub-county risk map,
+exported for the dashboard's horizon navigator.
 
-- Risk = predicted P(onset next month) using each sub-county's MOST RECENT
-  complete feature row — a genuine "as of now" forecast, not a re-score of
-  historical months. State this explicitly in your thesis.
+- Risk = predicted P(onset N months ahead) using each sub-county's MOST
+  RECENT complete feature row — a genuine "as of now" forecast, not a
+  re-score of historical months. State this explicitly in your thesis.
 - Low/Medium/High uses RELATIVE tertiles across sub-counties, not fixed
-  probability thresholds — conflict onset is rare overall (Phase 6: well
-  under 1% of sub-county-months), so fixed thresholds would call almost
-  everywhere "Low" and hide real relative differences. The raw
-  `risk_probability` is always kept alongside the category.
+  probability thresholds — conflict onset is rare overall, so fixed
+  thresholds would call almost everywhere "Low" and hide real relative
+  differences. The raw `risk_probability` is always kept alongside the
+  category. **The tertile split is relative to each horizon's own
+  predictions** — the same sub-county can land in a different category at
+  different horizons; that's expected, not a bug.
 - `src/risk_mapping.py` — prediction + categorization + boundary merge.
-- `LAG_MONTHS` at the top **must match** `10_ml_modeling.py`.
+- `HORIZONS_MONTHS` at the top **must match** `10_ml_modeling.py`.
 
-**Outputs:** `outputs/conflict_risk_layer.geojson` (dashboard-ready, with
-geometry), `outputs/conflict_risk_layer.csv` (same data, no geometry),
-`outputs/risk_map.png` (choropleth with legend).
+**Outputs**, per horizon, in `outputs/12_conflict_risk_mapping/horizon_<N>month/`:
+`conflict_risk_layer.geojson` (dashboard-ready, with geometry),
+`conflict_risk_layer.csv` (same data, no geometry), `risk_map.png`.
 
 **Review before presenting:** "No data" sub-counties lack complete recent
-feature history (e.g. an NDVI/rainfall gap) — worth checking whether that's
-genuine or fixable. The tertile split is relative to this run's sub-county
-set and will shift as data/probabilities change over time.
+feature history (e.g. an NDVI/rainfall gap). Only the 1-month horizon is
+the closest thing to a validated short-term forecast — check
+`outputs/10_ml_modeling/horizon_comparison_summary.csv` before presenting
+3/6-month results as equally trustworthy.
+
+
+## Land–water relationship analysis (`13_land_water_relationship_analysis.py`)
+
+Addresses the explicit research question behind this project's scope: it
+covers BOTH land and water conflicts, and part of its purpose is
+understanding whether/how they relate. No column in the source data marks
+a record as "land" or "water" — this script builds that classification
+from text (`NLP_Keywords`, falling back to `Incident_Summary`) via a
+keyword heuristic, then analyzes severity, chronicity (with a chi-square
+test), county distribution, and the domain balance over time.
+
+- `src/land_water_analysis.py` — the exact `LAND_KEYWORDS`/`WATER_KEYWORDS`
+  term lists are exposed as named constants, deliberately, so they're easy
+  to review/adjust. **This is a documented heuristic, not ground truth** —
+  say so explicitly in your methodology, and spot-check a sample of
+  `matched_land_terms`/`matched_water_terms` against the original text
+  before treating the resulting statistics as authoritative.
+- Run after `03_deduplication_check.py` (needs `conflict_cleaned.csv`) —
+  ideally also after `04_nlp_pipeline.py` for `severity_score`/`Is_Composite`.
+
+**Outputs:** `conflict_with_domain.csv` (every record + its domain +
+matched terms, for auditing), `severity_by_domain.csv`,
+`domain_composite_crosstab.csv` (+ chi-square test), `domain_by_county.csv`,
+`domain_yearly_trend.csv`, `land_water_relationship.png`.

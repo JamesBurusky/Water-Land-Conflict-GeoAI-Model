@@ -33,13 +33,20 @@ def available_filters():
 
 
 @router.get("/summary")
-def panel_summary(county: str | None = None, subcounty: str | None = None):
+def panel_summary(
+    county: str | None = None,
+    subcounty: str | None = None,
+    year_min: int | None = None,
+    year_max: int | None = None,
+):
     """
     Aggregated stats for a KPI/summary card (total onset months, avg
-    persistence, etc.) for the currently selected region -- cheaper
-    for the frontend than pulling the full filtered panel just to sum it.
+    persistence, etc.) for the currently selected region/date range --
+    cheaper for the frontend than pulling the full filtered panel just
+    to sum it.
     """
-    df = data_access.query_panel(county=county, subcounty=subcounty)
+    df = data_access.query_panel(county=county, subcounty=subcounty,
+                                  year_min=year_min, year_max=year_max)
     if len(df) == 0:
         return {}
 

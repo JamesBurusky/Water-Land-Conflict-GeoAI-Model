@@ -30,19 +30,21 @@ from panel_builder import (
     add_static_wrua_count, add_timevarying_ndvi, add_timevarying_rainfall,
     add_conflict_features,
 )
+from output_paths import step_dir
 
 pd.set_option("display.max_columns", None)
 
 DATA_DIR = Path("data")
-OUT_DIR = Path("outputs")
-OUT_DIR.mkdir(exist_ok=True)
+OUT_DIR = step_dir("06_spatial_feature_engineering")
+STEP01_DIR = step_dir("01_phase1_data_audit")
+STEP03_DIR = step_dir("03_deduplication_check")
 
 CENSUS_PATH = DATA_DIR / "kenya_census_2019_subcounty_stats.csv"
-CONFLICT_CLEANED = OUT_DIR / "conflict_cleaned.csv"
-WRA_CLEANED = OUT_DIR / "wra_cleaned.csv"
-NDVI_FILTERED = OUT_DIR / "ndvi_filtered.csv"
-CHIRPS_FILTERED = OUT_DIR / "chirps_filtered.csv"
-WRUA_JOINED = OUT_DIR / "wrua_joined.csv"
+CONFLICT_CLEANED = STEP03_DIR / "conflict_cleaned.csv"
+WRA_CLEANED = STEP01_DIR / "wra_cleaned.csv"
+NDVI_FILTERED = STEP01_DIR / "ndvi_filtered.csv"
+CHIRPS_FILTERED = STEP01_DIR / "chirps_filtered.csv"
+WRUA_JOINED = STEP01_DIR / "wrua_joined.csv"
 BOUNDARIES_SHP = DATA_DIR / "subcounty_boundaries.shp"
 BOUNDARY_COUNTY_COL = "COUNTY"
 BOUNDARY_SUBCOUNTY_COL = "SUBCOUNTY"

@@ -28,25 +28,30 @@ from dedup_check import (
     inspect_id_collisions, resolve_id_collisions,
 )
 from conflict_cleaning import parse_dates
+from output_paths import step_dir
 
 pd.set_option("display.max_columns", None)
 
 DATA_DIR = Path("data")
-OUT_DIR = Path("outputs")
-OUT_DIR.mkdir(exist_ok=True)
+OUT_DIR = step_dir("03_deduplication_check")
+STEP01_DIR = step_dir("01_phase1_data_audit")
+STEP02_DIR = step_dir("02_conflict_cleaning")
 
-# Prefer the cleaned outputs from earlier phases if they exist; fall
-# back to the raw file otherwise (e.g. if you're running this before
-# 02_conflict_cleaning.py for some reason).
-CONFLICT_CLEANED = OUT_DIR / "conflict_cleaned.csv"
+# Reads from 02's output; WRITES ITS OWN updated conflict_cleaned.csv
+# into THIS step's folder (not overwriting 02's) -- 03 is the step
+# that produces the ID-collision-resolved, final version of this file.
+# Every downstream script (04, 06, 07, 09, 10) reads conflict_cleaned.csv
+# from 03's folder, not 02's, for exactly this reason.
+CONFLICT_CLEANED_IN = STEP02_DIR / "conflict_cleaned.csv"
+CONFLICT_CLEANED_OUT = OUT_DIR / "conflict_cleaned.csv"
 CONFLICT_RAW = DATA_DIR / "Final_Main_kenya_land_water_conflicts.csv"
 
 RAW_PATHS = {
     "census": DATA_DIR / "kenya_census_2019_subcounty_stats.csv",
-    "wra_cleaned": OUT_DIR / "wra_cleaned.csv",
-    "ndvi_filtered": OUT_DIR / "ndvi_filtered.csv",
-    "chirps_filtered": OUT_DIR / "chirps_filtered.csv",
-    "wrua_joined": OUT_DIR / "wrua_joined.csv",
+    "wra_cleaned": STEP01_DIR / "wra_cleaned.csv",
+    "ndvi_filtered": STEP01_DIR / "ndvi_filtered.csv",
+    "chirps_filtered": STEP01_DIR / "chirps_filtered.csv",
+    "wrua_joined": STEP01_DIR / "wrua_joined.csv",
 }
 ID_COLS = {
     "census": None,
@@ -87,10 +92,10 @@ log("STAGE 1/2: DONE.\n")
 
 # %%
 log("STAGE 2/2: Checking for near-duplicate conflict records...")
-if CONFLICT_CLEANED.exists():
-    conflict = pd.read_csv(CONFLICT_CLEANED, parse_dates=["Date_Start_parsed", "Date_End_parsed"])
+if CONFLICT_CLEANED_IN.exists():
+    conflict = pd.read_csv(CONFLICT_CLEANED_IN, parse_dates=["Date_Start_parsed", "Date_End_parsed"])
 else:
-    print(f"  {CONFLICT_CLEANED} not found -- loading and parsing raw file instead")
+    print(f"  {CONFLICT_CLEANED_IN} not found -- loading and parsing raw file instead")
     conflict = parse_dates(pd.read_csv(CONFLICT_RAW))
 
 check_exact_duplicates(conflict, id_col="Record_ID", label="conflict (exact)")
@@ -121,11 +126,14 @@ if len(id_collision_rows) > 0:
           f"incidents, not literal re-entries with minor text edits)")
 
     conflict = resolve_id_collisions(conflict, id_col="Record_ID")
-    conflict.to_csv(CONFLICT_CLEANED, index=False)
-    print(f"  Re-saved {CONFLICT_CLEANED} with unique Record_IDs "
-          f"(original values kept in 'Original_Record_ID')")
 else:
     print("  No Record_ID collisions found.")
+
+# Always write the final version here -- this is THE conflict_cleaned.csv
+# every downstream script (04, 06, 07, 09, 10) reads, whether or not any
+# collisions needed resolving this run.
+conflict.to_csv(CONFLICT_CLEANED_OUT, index=False)
+print(f"  Saved final conflict_cleaned.csv -> {CONFLICT_CLEANED_OUT}")
 
 # %% [markdown]
 # ### 2b. Near-duplicate text scan

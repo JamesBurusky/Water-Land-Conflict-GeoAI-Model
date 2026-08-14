@@ -24,6 +24,7 @@ from sklearn.metrics import (
     roc_auc_score, average_precision_score, confusion_matrix,
     roc_curve, precision_recall_curve,
 )
+from sklearn.calibration import calibration_curve
 import xgboost as xgb
 
 
@@ -126,3 +127,53 @@ def evaluate_model(model, scaler, X_test, y_test, model_name: str) -> dict:
     }
     cm = confusion_matrix(y_test, y_pred)
     return metrics, cm, y_proba
+
+
+def confusion_matrix_to_frame(cm: np.ndarray, model_name: str) -> pd.DataFrame:
+    """
+    Turns the raw 2x2 confusion_matrix array into a labeled, exportable
+    table (True Negative / False Positive / False Negative / True
+    Positive named explicitly) -- the raw array alone is easy to
+    transpose or misread when reported in a thesis, so this pins down
+    the labeling once, here, rather than leaving it to be reconstructed
+    correctly (or not) every time it's written up.
+    """
+    tn, fp, fn, tp = cm.ravel()
+    return pd.DataFrame([{
+        "model": model_name,
+        "true_negative": int(tn), "false_positive": int(fp),
+        "false_negative": int(fn), "true_positive": int(tp),
+        "total": int(cm.sum()),
+    }])
+
+
+def compute_calibration(y_test, y_proba, n_bins: int = 10) -> pd.DataFrame:
+    """
+    Reliability/calibration data: among predictions the model assigned
+    roughly probability p, what fraction were ACTUALLY positive? A
+    well-calibrated model has these two columns close together across
+    the whole range. This matters specifically because scale_pos_weight
+    (used in train_xgboost to handle class imbalance) systematically
+    shifts predicted probabilities upward to compensate for the rare
+    positive class -- useful for ranking/classification, but it means
+    the raw probability should NOT be read as a literal "70% chance"
+    without checking this first. Returns empty if the test set has
+    only one class (calibration is undefined without both).
+    """
+    if len(set(y_test)) < 2:
+        return pd.DataFrame(columns=["mean_predicted_probability", "fraction_of_positives", "bin_count"])
+    prob_true, prob_pred = calibration_curve(y_test, y_proba, n_bins=n_bins, strategy="quantile")
+    # calibration_curve doesn't return per-bin counts directly -- derive
+    # them separately so the output also shows how much data backs each
+    # point (a calibration point from 3 examples is much less trustworthy
+    # than one from 300, and that shouldn't be invisible in the export).
+    bins = pd.qcut(y_proba, q=min(n_bins, len(set(y_proba))), duplicates="drop")
+    counts = pd.Series(y_proba).groupby(bins, observed=True).count().to_numpy()
+    # counts may have fewer/more entries than prob_true if bins collapsed
+    # differently -- align defensively rather than assume equal length.
+    n = min(len(prob_true), len(counts))
+    return pd.DataFrame({
+        "mean_predicted_probability": prob_pred[:n],
+        "fraction_of_positives": prob_true[:n],
+        "bin_count": counts[:n],
+    })

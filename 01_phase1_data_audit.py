@@ -35,6 +35,7 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, "src")
 from name_cleaning import build_canonical_lookup, match_dataframe, TARGET_COUNTIES
 from spatial_join import load_boundaries, join_wrua_to_subcounty
+from output_paths import step_dir
 
 pd.set_option("display.max_columns", None)
 
@@ -78,8 +79,7 @@ log("=== PHASE 1 SCRIPT STARTED ===")
 
 # %%
 DATA_DIR = Path("data")
-OUT_DIR = Path("outputs")
-OUT_DIR.mkdir(exist_ok=True)
+OUT_DIR = step_dir("01_phase1_data_audit")
 
 PATHS = {
     "census": DATA_DIR / "kenya_census_2019_subcounty_stats.csv",

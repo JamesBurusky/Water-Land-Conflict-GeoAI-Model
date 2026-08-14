@@ -25,14 +25,16 @@ from text_cleaning import load_nlp_model, clean_text_series, split_delimited_fie
 from sentiment import compute_sentiment
 from ner_extraction import load_ner_model, extract_entities
 from name_cleaning import build_canonical_lookup
+from output_paths import step_dir
 
 pd.set_option("display.max_columns", None)
 
 DATA_DIR = Path("data")
-OUT_DIR = Path("outputs")
-OUT_DIR.mkdir(exist_ok=True)
+OUT_DIR = step_dir("04_nlp_pipeline")
 
-CONFLICT_CLEANED = OUT_DIR / "conflict_cleaned.csv"
+# conflict_cleaned.csv comes from step 03 (deduplication), NOT step 02 --
+# 03 produces the ID-collision-resolved final version.
+CONFLICT_CLEANED = step_dir("03_deduplication_check") / "conflict_cleaned.csv"
 CENSUS_PATH = DATA_DIR / "kenya_census_2019_subcounty_stats.csv"
 SENTIMENT_BACKEND = "vader"  # or "transformer" -- see src/sentiment.py
 
@@ -48,7 +50,7 @@ log("STAGE 1/4: Loading cleaned conflict data...")
 if CONFLICT_CLEANED.exists():
     conflict = pd.read_csv(CONFLICT_CLEANED)
 else:
-    print(f"  {CONFLICT_CLEANED} not found -- run 02_conflict_cleaning.py first.")
+    print(f"  {CONFLICT_CLEANED} not found -- run 01/02/03 first.")
     raise SystemExit(1)
 print(f"  Loaded {len(conflict):,} conflict records")
 log("STAGE 1/4: DONE.\n")

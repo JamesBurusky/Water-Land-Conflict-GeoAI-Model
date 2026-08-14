@@ -12,6 +12,7 @@ def conflicts(
     year_min: int | None = None,
     year_max: int | None = None,
     topic_id: int | None = None,
+    domain: str | None = Query(None, description="Land-only / Water-only / Mixed / Neither"),
     search: str | None = Query(None, description="Free-text search over incident summaries"),
     limit: int = Query(500, le=5000),
 ):
@@ -22,10 +23,7 @@ def conflicts(
     """
     df = data_access.query_conflicts(
         county=county, subcounty=subcounty, year_min=year_min, year_max=year_max,
-        topic_id=topic_id, search=search,
+        topic_id=topic_id, search=search, domain=domain,
     )
     df = df.head(limit)
-    # Replace NaN with None so it serializes to JSON `null`, not
-    # invalid JSON `NaN` (pandas' default) -- keeps every downstream
-    # JSON consumer (JS, Postgres later) speaking valid JSON.
     return data_access.df_to_json_records(df)

@@ -21,16 +21,24 @@ import pandas as pd
 sys.path.insert(0, "src")
 from pipeline_utils import log, Timer
 from panel_builder import add_nlp_features
+from output_paths import step_dir
 
 pd.set_option("display.max_columns", None)
 
-OUT_DIR = Path("outputs")
+OUT_DIR = step_dir("08_nlp_panel_features")
+STEP06_DIR = step_dir("06_spatial_feature_engineering")
 
-PANEL_PATH = OUT_DIR / "ml_panel.csv"
-GEOCODED_PATH = OUT_DIR / "conflict_geocoded.csv"
-TOPICS_SAFE_PATH = OUT_DIR / "conflict_topics_temporal_safe.csv"  # from 07_topic_refit_temporal_safe.py -- preferred if present
-TOPICS_PATH = OUT_DIR / "conflict_topics.csv"          # from 05_topic_modelling.py (full-corpus fit -- has leakage, see 07_topic_refit_temporal_safe.py)
-NLP_ENRICHED_PATH = OUT_DIR / "conflict_nlp_enriched.csv"  # fallback if neither topics file exists yet
+INPUT_PANEL_PATH = STEP06_DIR / "ml_panel.csv"       # base panel from step 06 (pre-NLP)
+GEOCODED_PATH = STEP06_DIR / "conflict_geocoded.csv"
+TOPICS_SAFE_PATH = step_dir("07_topic_refit_temporal_safe") / "conflict_topics_temporal_safe.csv"  # preferred if present
+TOPICS_PATH = step_dir("05_topic_modelling") / "conflict_topics.csv"          # full-corpus fit -- has leakage, see 07
+NLP_ENRICHED_PATH = step_dir("04_nlp_pipeline") / "conflict_nlp_enriched.csv"  # fallback if neither topics file exists yet
+
+# This step's OWN output: the full, NLP-augmented panel. Every script
+# after this one (09, 10, 11, 12) reads ml_panel.csv from THIS folder,
+# not from 06's -- 06's version is the base (pre-NLP) panel, kept there
+# for reference; this is the complete version.
+OUTPUT_PANEL_PATH = OUT_DIR / "ml_panel.csv"
 
 HALF_LIFE_DAYS = 180  # MUST match what 06_spatial_feature_engineering.py used,
                        # so conflict_persistence and decayed_sentiment stay comparable
@@ -44,7 +52,7 @@ log("=== PHASE 3 (CONTINUED): NLP PANEL FEATURES STARTED ===")
 
 # %%
 log("STAGE 1/3: Loading panel and NLP data...")
-required = {"ml_panel": PANEL_PATH, "conflict_geocoded": GEOCODED_PATH}
+required = {"ml_panel": INPUT_PANEL_PATH, "conflict_geocoded": GEOCODED_PATH}
 missing = {k: v for k, v in required.items() if not v.exists()}
 if missing:
     print("  Missing required file(s) -- run 06_spatial_feature_engineering.py first:")
@@ -52,7 +60,7 @@ if missing:
         print(f"    {k}: {v}")
     raise SystemExit(1)
 
-panel = pd.read_csv(PANEL_PATH, parse_dates=["panel_date"])
+panel = pd.read_csv(INPUT_PANEL_PATH, parse_dates=["panel_date"])
 geocoded = pd.read_csv(GEOCODED_PATH)
 
 if TOPICS_SAFE_PATH.exists():
@@ -110,14 +118,12 @@ log("STAGE 2/3: DONE.\n")
 # ## 3. Save
 
 # %%
-log("STAGE 3/3: Saving updated panel...")
-# Keep a copy of the pre-NLP panel for reference/comparison
-if not (OUT_DIR / "ml_panel_pre_nlp.csv").exists():
-    pd.read_csv(PANEL_PATH).to_csv(OUT_DIR / "ml_panel_pre_nlp.csv", index=False)
-    print(f"  Backed up pre-NLP panel -> {OUT_DIR / 'ml_panel_pre_nlp.csv'}")
-
-panel.to_csv(PANEL_PATH, index=False)
-log(f"STAGE 3/3: DONE. Saved -> {PANEL_PATH} (overwritten with NLP features added)\n")
+log("STAGE 3/3: Saving full NLP-augmented panel...")
+# No backup-copy needed -- the pre-NLP base panel already lives
+# untouched in 06's own folder (INPUT_PANEL_PATH); this step's output
+# is simply the complete version, in its own folder.
+panel.to_csv(OUTPUT_PANEL_PATH, index=False)
+log(f"STAGE 3/3: DONE. Saved -> {OUTPUT_PANEL_PATH}\n")
 
 # %% [markdown]
 # ## Summary
@@ -129,7 +135,7 @@ print("PHASE 3 (NLP PANEL FEATURES) COMPLETE")
 print(f"Total runtime: {timer.elapsed:.1f} seconds")
 print("=" * 60)
 print(f"""
-{PANEL_PATH} now additionally includes:
+{OUTPUT_PANEL_PATH} now additionally includes:
   - decayed_sentiment: decay-weighted average sentiment of recent/
     ongoing conflict events in this sub-county-month (NaN if no
     conflict history yet)

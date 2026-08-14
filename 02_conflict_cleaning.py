@@ -23,6 +23,7 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, "src")
 from pipeline_utils import log, save_and_display, Timer
+from output_paths import step_dir
 from conflict_cleaning import (
     parse_dates, clean_counts, flag_composite_records,
     compute_severity_score, decayed_persistence,
@@ -32,8 +33,7 @@ from conflict_cleaning import (
 pd.set_option("display.max_columns", None)
 
 DATA_DIR = Path("data")
-OUT_DIR = Path("outputs")
-OUT_DIR.mkdir(exist_ok=True)
+OUT_DIR = step_dir("02_conflict_cleaning")
 
 CONFLICT_PATH = DATA_DIR / "Final_Main_kenya_land_water_conflicts.csv"
 

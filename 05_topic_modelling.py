@@ -23,15 +23,17 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, "src")
 from pipeline_utils import log, save_and_display, Timer
-from topic_modeling import fit_topics
+from topic_modeling import fit_topics, build_place_name_stopwords
+from name_cleaning import build_canonical_lookup
+from output_paths import step_dir
 
 pd.set_option("display.max_columns", None)
 
 DATA_DIR = Path("data")
-OUT_DIR = Path("outputs")
-OUT_DIR.mkdir(exist_ok=True)
+OUT_DIR = step_dir("05_topic_modelling")
+CENSUS_PATH = DATA_DIR / "kenya_census_2019_subcounty_stats.csv"
 
-NLP_ENRICHED_PATH = OUT_DIR / "conflict_nlp_enriched.csv"
+NLP_ENRICHED_PATH = step_dir("04_nlp_pipeline") / "conflict_nlp_enriched.csv"
 
 # Tunable -- see the note in src/topic_modeling.py:build_topic_model.
 # 15 is a reasonable starting point for hundreds-to-low-thousands of
@@ -71,10 +73,29 @@ log("STAGE 1/2: DONE.\n")
 # %%
 log("STAGE 2/2: Fitting BERTopic (downloading embedding model on first "
     "run if needed -- requires internet)...")
+
+# Place names (county/sub-county/river names) naturally score high in
+# BERTopic's default topic-word extraction, since they're frequent and
+# distinctive terms in a geospatial conflict dataset -- this excludes
+# them from the topic REPRESENTATION (the word list shown per topic)
+# without touching the embeddings, which still see full raw text for
+# context. See build_place_name_stopwords() for exactly what's excluded.
+if CENSUS_PATH.exists():
+    canonical_subcounties = build_canonical_lookup(pd.read_csv(CENSUS_PATH)).table["SubCounty"].tolist()
+else:
+    print(f"  WARNING: {CENSUS_PATH} not found -- excluding county/river names "
+          f"from topic words, but not sub-county names (run 01_phase1_data_audit.py "
+          f"first for the full place-name exclusion list).")
+    canonical_subcounties = []
+place_stopwords = build_place_name_stopwords(canonical_subcounties=canonical_subcounties, nlp_enriched_df=conflict)
+print(f"  Excluding {len(place_stopwords)} place-name terms from topic word lists "
+      f"(static gazetteer + every specific place your own NER found in the real text)")
+
 result, topic_model, topic_info = fit_topics(
     conflict, text_col="Full_Text_Description",
     embedding_backend="sentence_transformer",
     min_topic_size=MIN_TOPIC_SIZE,
+    extra_stopwords=place_stopwords,
 )
 
 n_outliers = (result["topic_id"] == -1).sum()

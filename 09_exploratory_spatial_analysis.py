@@ -29,15 +29,15 @@ from spatial_analysis import (
     compute_kde_surface, compute_dbscan_clusters,
 )
 from temporal_analysis import yearly_trend, seasonal_pattern, county_yearly_trend
+from output_paths import step_dir
 
 pd.set_option("display.max_columns", None)
 
 DATA_DIR = Path("data")
-OUT_DIR = Path("outputs")
-OUT_DIR.mkdir(exist_ok=True)
+OUT_DIR = step_dir("09_exploratory_spatial_analysis")
 
-PANEL_PATH = OUT_DIR / "ml_panel.csv"
-CONFLICT_CLEANED = OUT_DIR / "conflict_cleaned.csv"
+PANEL_PATH = step_dir("08_nlp_panel_features") / "ml_panel.csv"
+CONFLICT_CLEANED = step_dir("03_deduplication_check") / "conflict_cleaned.csv"
 BOUNDARIES_SHP = DATA_DIR / "subcounty_boundaries.shp"
 BOUNDARY_COUNTY_COL = "COUNTY"
 BOUNDARY_SUBCOUNTY_COL = "SUBCOUNTY"
