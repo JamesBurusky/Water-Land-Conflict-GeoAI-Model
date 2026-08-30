@@ -1,7 +1,0 @@
-Top 5 factors contributing to predicted conflict risk (by mean absolute SHAP value):
-
-1. conflict_persistence_lag1: mean |SHAP| = 0.2910 -- HIGHER values of this feature INCREASE predicted risk
-2. Mean_NDVI_lag1: mean |SHAP| = 0.2473 -- HIGHER values of this feature DECREASE predicted risk
-3. Rainfall_mm_lag1: mean |SHAP| = 0.2374 -- HIGHER values of this feature DECREASE predicted risk
-4. Rainfall_Anomaly_mm_lag1: mean |SHAP| = 0.2284 -- HIGHER values of this feature INCREASE predicted risk
-5. conflict_severity_weighted_lag1: mean |SHAP| = 0.2048 -- HIGHER values of this feature DECREASE predicted risk

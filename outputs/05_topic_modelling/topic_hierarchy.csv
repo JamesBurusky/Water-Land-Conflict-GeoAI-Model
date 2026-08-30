@@ -1,9 +1,0 @@
-Parent_ID,Parent_Name,Topics,Child_Left_ID,Child_Left_Name,Child_Right_ID,Child_Right_Name,Distance
-16,documented_water_land_river_2024,"[0, 1, 2, 3, 4, 5, 6, 7, 8]",10,water_river_commercial_documented_land,15,documented_2024_land_2025_river,1.0297686852599985
-15,documented_2024_land_2025_river,"[1, 2, 5, 6, 7, 8]",14,documented_2024_land_2025_river,8,star_documented_2024_february 2024_2024 documented,0.8410858270969431
-14,documented_2024_land_2025_river,"[1, 2, 5, 6, 7]",13,land_documented_2025_daily_elc,11,2024_documented_floods_residents_people,0.7944926368171871
-13,land_documented_2025_daily_elc,"[1, 5, 6]",5,river_rivers_regeneration_programme_river regeneration,12,land_documented_2025_elc_daily,0.7428698789197321
-12,land_documented_2025_elc_daily,"[1, 6]",6,demolition_2026_riparian_documented_2018,1,land_elc_documented_2025_daily,0.6982149108868122
-11,2024_documented_floods_residents_people,"[2, 7]",2,2024_floods_documented_march_people,7,residents_documented_informal_settlements_eviction,0.6697001008606107
-10,water_river_commercial_documented_land,"[0, 3, 4]",0,water_commercial_private_land_local,9,water_documented_river_dam_company,0.6690582542579568
-9,water_documented_river_dam_company,"[3, 4]",3,water_documented_company_sewerage_water sewerage,4,river_water_documented_dam_town,0.6337917400353046
