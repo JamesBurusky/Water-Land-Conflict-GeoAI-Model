@@ -1,0 +1,49 @@
+# Brings up the whole dashboard: FastAPI backend + nginx-served React
+# frontend. Run from the geoai_conflict/dashboard/ directory:
+#
+#   docker compose up -d --build
+#
+# Then visit http://<your-contabo-ip>/  -- that's it, one port (80).
+#
+# The backend reads pipeline outputs from the HOST's ../outputs and
+# ../data folders (mounted read-only) -- i.e. wherever you've actually
+# run the pipeline (python run_pipeline.py, or 01_phase1_data_audit.py
+# through 13_land_water_relationship_analysis.py individually) on this
+# server. Each step writes into its own outputs/<step_name>/ subfolder
+# -- this whole directory is mounted, so new steps/subfolders need no
+# docker-compose changes. Re-running the pipeline updates those
+# folders; restart the backend container (`docker compose restart
+# backend`) to pick up fresh data (see the cache TTL note in
+# data_access.py for why a restart, not just waiting, guarantees fresh
+# data immediately).
+
+services:
+  backend:
+    build:
+      context: ./backend
+    environment:
+      - OUTPUTS_DIR=/pipeline/outputs
+      - DATA_DIR=/pipeline/data
+      - CORS_ORIGINS=http://localhost,http://localhost:,http://localhost:8181
+    volumes:
+      - ../outputs:/pipeline/outputs:ro
+      - ../data:/pipeline/data:ro
+    restart: unless-stopped
+    # No host port published -- only the frontend's nginx talks to
+    # this container, over the internal Docker network (service name
+    # "backend", see frontend/nginx.conf's proxy_pass).
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Empty string -> same-origin relative /api/* requests,
+        # proxied by this container's own nginx to the backend
+        # service above. See frontend/src/api/client.ts for why this
+        # must be empty (not a URL) in production.
+        VITE_API_BASE_URL: ""
+    ports:
+      - "8181:5173"  # frontend's nginx serves the React app on port 8181
+    depends_on:
+      - backend
+    restart: unless-stopped

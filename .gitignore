@@ -1,0 +1,15 @@
+# Dependency folders
+node_modules/
+
+# Specific zip archives
+outputs_older.zip
+outputs.zip
+
+# Specific folders
+outputs_older/
+outputs/
+
+# Generated files and environments
+*.env
+*venv/
+/generated/prisma
