@@ -101,7 +101,7 @@ PATHS = {
     "conflict": DATA_DIR / "Final_Main_kenya_land_water_conflicts.csv",
     "ndvi": DATA_DIR / "Monthly_NDVI_Subcounty_2004_2025_Clean.csv",
     "chirps": DATA_DIR / "CHIRPS_Subcounty_Rainfall_Anomaly_2004_2025.csv",
-    "wrua": DATA_DIR / "WRUAs-James.csv",
+    "wrua": DATA_DIR / "WRUAs-JAMES.csv",
     "boundaries_shp": DATA_DIR / "subcounty_boundaries.shp",
 }
 BOUNDARY_COUNTY_COL = "COUNTY"        # attribute column name in your shapefile
